@@ -57,4 +57,4 @@ Das Modell basiert auf **FOMO (Object Detection)** und wird direkt auf dem Gerä
 
 
 ## Ziel
-Zuverlässige Erkennung und Zählung von Hummeln am Nesteingang unter realen Bedingungen.
+Zuverlässige Erkennung und Zählung von Hummeln am Nesteingang.
