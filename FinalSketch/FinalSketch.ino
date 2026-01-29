@@ -4,6 +4,15 @@
 #include "esp_http_server.h"
 #include <vector>
 
+//Bibliotheken für Sensoren ---
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_HDC1000.h>
+#include <Adafruit_VEML6070.h>
+#include <Adafruit_LTR329_LTR303.h>
+// --------------------------------------
+
 // Wlan Anpassen!
 const char* ssid = "xxx";
 const char* password = "xxx";
@@ -23,7 +32,20 @@ const char* password = "xxx";
 int cnt_in = 0;
 int cnt_out = 0;
 
-// PINS
+// --- NEU: PINS & Objekte aus test.ino ---
+#define PIN_QWIIC_SDA 2
+#define PIN_QWIIC_SCL 1
+
+// OLED
+Adafruit_SSD1306 display(128, 64, &Wire, -1);
+
+// Sensoren
+Adafruit_HDC1000 hdc;
+Adafruit_VEML6070 uv;
+Adafruit_LTR329 ltr;
+// ----------------------------------------
+
+// KAMERA PINS
 #define PWDN_GPIO_NUM  46
 #define RESET_GPIO_NUM -1
 #define XCLK_GPIO_NUM  15
@@ -71,10 +93,11 @@ std::vector<TrackedBee> trackers;
 int next_bee_id = 1;
 
 bool is_same_object(Box a, Box b) {
-    int cx_a = a.x + a.w/2; int cy_a = a.y + a.h/2;
+    int cx_a = a.x + a.w/2;
+    int cy_a = a.y + a.h/2;
     int cx_b = b.x + b.w/2; int cy_b = b.y + b.h/2;
     int dist = sqrt(pow(cx_a - cx_b, 2) + pow(cy_a - cy_b, 2));
-    return (dist < 40); 
+    return (dist < 40);
 }
 
 void update_counters() {
@@ -87,7 +110,8 @@ void update_counters() {
 
         for(int j=0; j<trackers.size(); j++) {
             float dist = abs(trackers[j].cy - cy);
-            if(dist < min_dist) { min_dist = dist; best_idx = j; }
+            if(dist < min_dist) { min_dist = dist; best_idx = j;
+            }
         }
 
         if(best_idx != -1) {
@@ -107,7 +131,7 @@ void update_counters() {
     int line_bot = MODEL_H * LINE_BOT_POS;
 
     for(auto &t : trackers) {
-        if(t.lost_frames > 2) continue; 
+        if(t.lost_frames > 2) continue;
         if(t.cy < line_top) t.touched_top = true;
         if(t.cy > line_bot) t.touched_bot = true;
 
@@ -127,8 +151,53 @@ void update_counters() {
     }
 }
 
+// --- Hilfsfunktion für Sensoren ---
+void handleSensorsAndDisplay() {
+    // Sensoren lesen
+    float temp = hdc.readTemperature();
+    float hum = hdc.readHumidity();
+    uint16_t uv_val = uv.readUV();
+    uint16_t ch0, ch1;
+    ltr.readBothChannels(ch0, ch1);
+
+    // OLED Update
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    
+    // Luft
+    display.print("Luft:   "); 
+    if (!isnan(temp)) { display.print(temp, 1); display.println(" C"); }
+    else { display.println("-.- C"); }
+
+    // Feuchte
+    display.print("Feucht: "); 
+    if (!isnan(hum)) { display.print(hum, 1); display.println(" %"); }
+    else { display.println("-.- %"); }
+
+    // Licht
+    display.print("Licht:  "); display.println(ch0);
+    
+    // Zählerstand anzeigen
+    display.println("----------------");
+    display.print("In: "); display.print(cnt_in);
+    display.print(" Out: "); display.println(cnt_out);
+
+    display.display();
+}
+
 void aiTask(void * parameter) {
+    unsigned long lastSensorUpdate = 0; // Timer für Sensoren
+
     while(true) {
+        
+        // --- Sensoren alle 2 Sekunden aktualisieren ---
+        // Dies verhindert, dass das Display die KI ausbremst
+        if(millis() - lastSensorUpdate > 2000) {
+            handleSensorsAndDisplay();
+            lastSensorUpdate = millis();
+        }
+        // ---------------------------------------------------
+
         if (new_frame_reay) {
             ai_is_running = true;
             new_frame_reay = false; 
@@ -184,14 +253,15 @@ void aiTask(void * parameter) {
             for(int i=0; i<5; i++) candidates[i] = next_candidates[i];
             update_counters();
             xSemaphoreGive(xMutex);
-            ai_is_running = false; 
+            ai_is_running = false;
         }
         vTaskDelay(20 / portTICK_PERIOD_MS);
     }
 }
 
 void draw_face_box(uint16_t* buf, int w, int h, int bx, int by, int bw, int bh, uint16_t color) {
-    if (bx < 0) bx = 0; if (by < 0) by = 0;
+    if (bx < 0) bx = 0;
+    if (by < 0) by = 0;
     for (int x = bx; x < bx + bw; x++) {
         if (x < w) {
             if (by < h) buf[by * w + x] = color;
@@ -212,19 +282,18 @@ void draw_hud(uint16_t* buf) {
     
     // Rote Linie Oben, Blaue Linie Unten
     for(int x = 0; x < MODEL_W; x+=2) { 
-        buf[y1 * MODEL_W + x] = 0xF800; 
+        buf[y1 * MODEL_W + x] = 0xF800;
         buf[y2 * MODEL_W + x] = 0x001F; 
     }
 }
 
 // Weitwinkel Resize
 void resize_to_ai_buf(camera_fb_t *fb, uint16_t* dest_buf) {
-    int src_h = fb->height; 
+    int src_h = fb->height;
     int src_w = fb->height; 
     int src_off_x = (fb->width - src_w) / 2; 
 
     uint16_t* src_buf = (uint16_t*)fb->buf;
-
     for (int y_dst = 0; y_dst < MODEL_H; y_dst++) {
         int y_src = (y_dst * src_h) / MODEL_H;
         for (int x_dst = 0; x_dst < MODEL_W; x_dst++) {
@@ -241,10 +310,10 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=frame");
     const char* _STREAM_BOUNDARY = "\r\n--frame\r\n";
     const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
-
     while (true) {
         fb = esp_camera_fb_get();
-        if (!fb) { res = ESP_FAIL; break; }
+        if (!fb) { res = ESP_FAIL; break;
+        }
         
         if (!ai_is_running && !new_frame_reay) {
             resize_to_ai_buf(fb, ai_input_buf);
@@ -252,22 +321,19 @@ static esp_err_t stream_handler(httpd_req_t *req) {
         }
         
         resize_to_ai_buf(fb, display_buf);
-        
         xSemaphoreTake(xMutex, portMAX_DELAY);
         draw_hud(display_buf);
         for (int i = 0; i < confirmed_count; i++) {
             draw_face_box(display_buf, MODEL_W, MODEL_H, 
                           confirmed_boxes[i].x, confirmed_boxes[i].y, 
-                          confirmed_boxes[i].w, confirmed_boxes[i].h, 0x07E0); 
+                          confirmed_boxes[i].w, confirmed_boxes[i].h, 0x07E0);
         }
         xSemaphoreGive(xMutex);
 
         uint8_t *jpg_buf = NULL;
         size_t jpg_len = 0;
-        
         fmt2jpg((uint8_t*)display_buf, MODEL_W * MODEL_H * 2, MODEL_W, MODEL_H, PIXFORMAT_RGB565, 60, &jpg_buf, &jpg_len);
-        esp_camera_fb_return(fb); 
-
+        esp_camera_fb_return(fb);
         if (res == ESP_OK) res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
         if (res == ESP_OK) {
             size_t hlen = snprintf(part_buf, 64, _STREAM_PART, jpg_len);
@@ -280,7 +346,6 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     return res;
 }
 
-// Index Handler
 static esp_err_t index_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
     const char* html = 
@@ -295,10 +360,35 @@ void setup() {
     Serial.begin(115200);
     esp_log_level_set("*", ESP_LOG_ERROR);
     Serial.println("BeeSense V27 (Lite) startet...");
+
+    // --- NEU: Sensoren & Display starten ---
+    Wire.begin(PIN_QWIIC_SDA, PIN_QWIIC_SCL);
+
+    // Display
+    if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3D)) {
+        Serial.println("OLED Fehler!");
+    } else {
+        display.setRotation(2); 
+        display.clearDisplay();
+        display.setTextColor(WHITE);
+        display.setTextSize(1);
+        display.setCursor(0,0);
+        display.println("Start...");
+        display.display();
+    }
+
+    // Sensoren
+    if (!hdc.begin()) Serial.println("HDC Fehler!");
+    uv.begin(VEML6070_1_T);
+    if (!ltr.begin()) Serial.println("LTR Fehler!");
+    ltr.setGain(LTR3XX_GAIN_1);
+    ltr.setIntegrationTime(LTR3XX_INTEGTIME_100);
+    // ----------------------------------------
     
     Serial.println("Verbinde mit WLAN...");
     WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print(".");
+    }
     Serial.println("\nWLAN verbunden!");
     Serial.print("IP: "); Serial.println(WiFi.localIP());
 
@@ -328,18 +418,18 @@ void setup() {
     config.pin_reset = RESET_GPIO_NUM;
     config.xclk_freq_hz = 16000000;
     config.pixel_format = PIXFORMAT_RGB565;
-    config.frame_size = FRAMESIZE_QVGA; 
+    config.frame_size = FRAMESIZE_QVGA;
     config.fb_location = CAMERA_FB_IN_PSRAM;
     config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     config.fb_count = 2; 
 
-    if (esp_camera_init(&config) != ESP_OK) { Serial.println("Kamera Fehler!"); return; }
+    if (esp_camera_init(&config) != ESP_OK) { Serial.println("Kamera Fehler!"); return;
+    }
     sensor_t *s = esp_camera_sensor_get();
     s->set_vflip(s, 1);
     s->set_hmirror(s, 1);
 
     xTaskCreatePinnedToCore(aiTask, "AI Task", 8192, NULL, 1, NULL, 0);
-
     httpd_config_t config_httpd = HTTPD_DEFAULT_CONFIG();
     config_httpd.server_port = 80;
     config_httpd.max_open_sockets = 13; 
