@@ -1,30 +1,41 @@
 #include <HummelProjekt_inferencing.h>
 #include "esp_camera.h"
 #include <WiFi.h>
+[cite_start]#include <WiFiClientSecure.h>
 #include "esp_http_server.h"
 #include <vector>
 
-//Bibliotheken für Sensoren ---
+// --- Bibliotheken für Sensoren ---
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_HDC1000.h>
 #include <Adafruit_VEML6070.h>
 #include <Adafruit_LTR329_LTR303.h>
-// --------------------------------------
 
-// Wlan Anpassen!
-const char* ssid = "xxx";
-const char* password = "xxx";
+// --- WLAN KONFIGURATION ---
+const char* ssid = "***";
+const char* password = "***";
+
+// --- SENSEBOX KONFIGURATION ---
+const char* SENSEBOX_ID = "697b3d91bd5b9f0007edb95b";
+const char* SENSOR_ID_TEMP = "697b3d91bd5b9f0007edb95c";
+const char* SENSOR_ID_HUM = "697b3d91bd5b9f0007edb95d";
+const char* SENSOR_ID_UV = "697b3d91bd5b9f0007edb95e";
+const char* SENSOR_ID_LIGHT = "697b3d91bd5b9f0007edb95e";
+const char* SENSOR_ID_IN = "undefined";
+const char* SENSOR_ID_OUT = "undefined";
+
+// OpenSenseMap Server
+const char* server = "ingress.opensensemap.org";
 
 // --- CONFIG ---
 #define CONFIDENCE_THRESHOLD 0.6
 #define PERSISTENCE_REQUIRED 1
-
 #define MODEL_W EI_CLASSIFIER_INPUT_WIDTH
 #define MODEL_H EI_CLASSIFIER_INPUT_HEIGHT
 
-// Zähler-Linien (Prozentual im Fenster)
+// Zähler-Linien
 #define LINE_TOP_POS 0.25 
 #define LINE_BOT_POS 0.75
 #define TRACKING_DIST 60 
@@ -32,7 +43,7 @@ const char* password = "xxx";
 int cnt_in = 0;
 int cnt_out = 0;
 
-// --- NEU: PINS & Objekte aus test.ino ---
+// --- PINS & Objekte ---
 #define PIN_QWIIC_SDA 2
 #define PIN_QWIIC_SCL 1
 
@@ -43,7 +54,12 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 Adafruit_HDC1000 hdc;
 Adafruit_VEML6070 uv;
 Adafruit_LTR329 ltr;
-// ----------------------------------------
+
+// Globale Variablen für Sensorwerte
+float global_temp = 0.0;
+float global_hum = 0.0;
+uint16_t global_uv = 0;
+uint16_t global_lux = 0;
 
 // KAMERA PINS
 #define PWDN_GPIO_NUM  46
@@ -65,7 +81,7 @@ Adafruit_LTR329 ltr;
 
 httpd_handle_t stream_httpd = NULL;
 
-// Buffer Definitionen
+// Buffer
 uint16_t *ai_input_buf = NULL; 
 uint16_t *display_buf = NULL;  
 
@@ -92,6 +108,48 @@ struct TrackedBee {
 std::vector<TrackedBee> trackers;
 int next_bee_id = 1;
 
+// --- Upload Funktion für OpenSenseMap ---
+void uploadData() {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi nicht verbunden, Upload übersprungen.");
+        return;
+    }
+
+    WiFiClientSecure client;
+    client.setInsecure(); // Zertifikat nicht prüfen (einfacher für ESP32)
+
+    if (!client.connect(server, 443)) {
+        Serial.println("Verbindung zu OpenSenseMap fehlgeschlagen!");
+        return;
+    }
+
+    // CSV Format vorbereiten: sensorID,value\n
+    String content = "";
+    content += String(SENSOR_ID_TEMP) + "," + String(global_temp) + "\n";
+    content += String(SENSOR_ID_HUM) + "," + String(global_hum) + "\n";
+    content += String(SENSOR_ID_UV) + "," + String(global_uv) + "\n";
+    content += String(SENSOR_ID_LIGHT) + "," + String(global_lux) + "\n";
+    content += String(SENSOR_ID_IN) + "," + String(cnt_in) + "\n";
+    content += String(SENSOR_ID_OUT) + "," + String(cnt_out) + "\n";
+
+    // HTTP POST Request senden
+    client.print("POST /boxes/" + String(SENSEBOX_ID) + "/data HTTP/1.1\r\n");
+    client.print("Host: " + String(server) + "\r\n");
+    client.print("Content-Type: text/csv\r\n");
+    client.print("Content-Length: " + String(content.length()) + "\r\n");
+    client.print("Connection: close\r\n\r\n");
+    client.print(content);
+
+    Serial.println("Daten an SenseBox gesendet!");
+    
+    // Antwort lesen (optional, zum Debuggen)
+    while (client.connected()) {
+        String line = client.readStringUntil('\n');
+        if (line == "\r") break;
+    }
+    client.stop();
+}
+
 bool is_same_object(Box a, Box b) {
     int cx_a = a.x + a.w/2;
     int cy_a = a.y + a.h/2;
@@ -110,8 +168,7 @@ void update_counters() {
 
         for(int j=0; j<trackers.size(); j++) {
             float dist = abs(trackers[j].cy - cy);
-            if(dist < min_dist) { min_dist = dist; best_idx = j;
-            }
+            if(dist < min_dist) { min_dist = dist; best_idx = j; }
         }
 
         if(best_idx != -1) {
@@ -153,12 +210,13 @@ void update_counters() {
 
 // --- Hilfsfunktion für Sensoren ---
 void handleSensorsAndDisplay() {
-    // Sensoren lesen
-    float temp = hdc.readTemperature();
-    float hum = hdc.readHumidity();
-    uint16_t uv_val = uv.readUV();
+    // Sensoren lesen und in globale Variablen speichern
+    global_temp = hdc.readTemperature(); [cite_start]
+    global_hum = hdc.readHumidity();     [cite_start]
+    global_uv = uv.readUV();             [cite_start]
     uint16_t ch0, ch1;
     ltr.readBothChannels(ch0, ch1);
+    global_lux = ch0;                    [cite_start]
 
     // OLED Update
     display.clearDisplay();
@@ -166,16 +224,16 @@ void handleSensorsAndDisplay() {
     
     // Luft
     display.print("Luft:   "); 
-    if (!isnan(temp)) { display.print(temp, 1); display.println(" C"); }
+    if (!isnan(global_temp)) { display.print(global_temp, 1); display.println(" C"); }
     else { display.println("-.- C"); }
 
     // Feuchte
-    display.print("Feucht: "); 
-    if (!isnan(hum)) { display.print(hum, 1); display.println(" %"); }
+    display.print("Feucht: ");
+    if (!isnan(global_hum)) { display.print(global_hum, 1); display.println(" %"); }
     else { display.println("-.- %"); }
 
     // Licht
-    display.print("Licht:  "); display.println(ch0);
+    display.print("Licht:  "); display.println(global_lux);
     
     // Zählerstand anzeigen
     display.println("----------------");
@@ -186,18 +244,25 @@ void handleSensorsAndDisplay() {
 }
 
 void aiTask(void * parameter) {
-    unsigned long lastSensorUpdate = 0; // Timer für Sensoren
+    unsigned long lastSensorUpdate = 0;
+    unsigned long lastUploadTime = 0; // Timer für Upload
 
     while(true) {
-        
-        // --- Sensoren alle 2 Sekunden aktualisieren ---
-        // Dies verhindert, dass das Display die KI ausbremst
-        if(millis() - lastSensorUpdate > 2000) {
-            handleSensorsAndDisplay();
-            lastSensorUpdate = millis();
-        }
-        // ---------------------------------------------------
+        unsigned long currentMillis = millis();
 
+        [cite_start]// 1. Sensoren & Display (alle 2 Sekunden) [cite: 131]
+        if(currentMillis - lastSensorUpdate > 2000) {
+            handleSensorsAndDisplay();
+            lastSensorUpdate = currentMillis;
+        }
+
+        // 2. Upload zur SenseBox (alle 60 Sekunden)
+        if(currentMillis - lastUploadTime > 60000) {
+            uploadData();
+            lastUploadTime = currentMillis;
+        }
+
+        // 3. KI Logik (Frame Verarbeitung)
         if (new_frame_reay) {
             ai_is_running = true;
             new_frame_reay = false; 
@@ -225,7 +290,6 @@ void aiTask(void * parameter) {
             Box next_candidates[5];
             int next_cand_count = 0;
             confirmed_count = 0;
-
             for (size_t ix = 0; ix < result.bounding_boxes_count; ix++) {
                 auto bb = result.bounding_boxes[ix];
                 if (bb.value > CONFIDENCE_THRESHOLD) {
@@ -280,14 +344,12 @@ void draw_hud(uint16_t* buf) {
     int y1 = MODEL_H * LINE_TOP_POS;
     int y2 = MODEL_H * LINE_BOT_POS;
     
-    // Rote Linie Oben, Blaue Linie Unten
     for(int x = 0; x < MODEL_W; x+=2) { 
         buf[y1 * MODEL_W + x] = 0xF800;
         buf[y2 * MODEL_W + x] = 0x001F; 
     }
 }
 
-// Weitwinkel Resize
 void resize_to_ai_buf(camera_fb_t *fb, uint16_t* dest_buf) {
     int src_h = fb->height;
     int src_w = fb->height; 
@@ -312,8 +374,7 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
     while (true) {
         fb = esp_camera_fb_get();
-        if (!fb) { res = ESP_FAIL; break;
-        }
+        if (!fb) { res = ESP_FAIL; break; }
         
         if (!ai_is_running && !new_frame_reay) {
             resize_to_ai_buf(fb, ai_input_buf);
@@ -361,8 +422,8 @@ void setup() {
     esp_log_level_set("*", ESP_LOG_ERROR);
     Serial.println("BeeSense V27 (Lite) startet...");
 
-    // --- NEU: Sensoren & Display starten ---
-    Wire.begin(PIN_QWIIC_SDA, PIN_QWIIC_SCL);
+    // --- Sensoren & Display starten ---
+    Wire.begin(PIN_QWIIC_SDA, PIN_QWIIC_SCL); [cite_start]
 
     // Display
     if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3D)) {
@@ -383,12 +444,10 @@ void setup() {
     if (!ltr.begin()) Serial.println("LTR Fehler!");
     ltr.setGain(LTR3XX_GAIN_1);
     ltr.setIntegrationTime(LTR3XX_INTEGTIME_100);
-    // ----------------------------------------
     
     Serial.println("Verbinde mit WLAN...");
     WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print(".");
-    }
+    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
     Serial.println("\nWLAN verbunden!");
     Serial.print("IP: "); Serial.println(WiFi.localIP());
 
@@ -423,8 +482,7 @@ void setup() {
     config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     config.fb_count = 2; 
 
-    if (esp_camera_init(&config) != ESP_OK) { Serial.println("Kamera Fehler!"); return;
-    }
+    if (esp_camera_init(&config) != ESP_OK) { Serial.println("Kamera Fehler!"); return; }
     sensor_t *s = esp_camera_sensor_get();
     s->set_vflip(s, 1);
     s->set_hmirror(s, 1);
