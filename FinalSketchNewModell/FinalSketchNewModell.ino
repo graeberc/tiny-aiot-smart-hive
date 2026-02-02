@@ -7,8 +7,8 @@
 #include "edge-impulse-sdk/dsp/image/image.hpp"
 
 // Wlan Anpassen!
-const char* ssid = "GraeberLink";
-const char* password = "2102A2802T0208C2902LC";
+const char* ssid = "xxx";
+const char* password = "xxx";
 
 // --- CONFIG ---
 #define CONFIDENCE_THRESHOLD EI_CLASSIFIER_OBJECT_DETECTION_THRESHOLD
