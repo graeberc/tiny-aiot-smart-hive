@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Smarter Hummelstock – Dashboard</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Leaflet (Karte) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div class="max-w-6xl mx-auto px-6 py-8">
+
+    <!-- Header -->
+    <header class="mb-6 flex items-center gap-4">
+      <img
+        src="beehavior-logo.png"
+        alt="BEEhavior Logo"
+        class="h-28 w-auto rounded-2xl"
+      />
+      <div>
+        <h1 class="text-3xl font-semibold tracking-tight">Smarter Hummelstock – Live Dashboard</h1>
+        <p class="text-slate-400 mt-1 text-sm">
+          Live-Sensorwerte & Standort aus openSenseMap (senseBox).
+        </p>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="mb-6">
+      <div class="inline-flex rounded-xl border border-slate-800 bg-slate-900/40 p-1">
+        <button id="tab-dashboard" class="px-4 py-2 text-sm rounded-lg bg-slate-800 text-slate-100">Dashboard</button>
+        <button id="tab-standort"  class="px-4 py-2 text-sm rounded-lg text-slate-300 hover:text-slate-100">Standort</button>
+        <button id="tab-recap"     class="px-4 py-2 text-sm rounded-lg text-slate-300 hover:text-slate-100">Recap</button>
+      </div>
+    </div>
+
+    <!-- TAB: Dashboard -->
+    <section id="view-dashboard">
+      <!-- Cards -->
+      <section class="grid gap-6 md:grid-cols-6 mb-8">
+        <!-- Einflüge (Demo/Platzhalter) -->
+        <div class="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 shadow-lg">
+          <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Einflüge heute</p>
+          <p id="in-today" class="text-3xl font-semibold">–</p>
+          <p class="text-xs text-slate-400 mt-1">noch kein Sensor</p>
+        </div>
+
+        <!-- Ausflüge (Demo/Platzhalter) -->
+        <div class="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 shadow-lg">
+          <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Ausflüge heute</p>
+          <p id="out-today" class="text-3xl font-semibold">–</p>
+          <p class="text-xs text-slate-400 mt-1">noch kein Sensor</p>
+        </div>
+
+        <!-- Aktivität (Demo/Platzhalter) -->
+        <div class="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 shadow-lg">
+          <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Aktuelle Aktivität</p>
+          <p id="activity-level" class="text-lg font-semibold">–</p>
+          <p class="text-xs text-slate-400 mt-1">noch kein Sensor</p>
+        </div>
+
+        <!-- UV -->
+        <div class="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 shadow-lg">
+          <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">UV‑Intensität</p>
+          <p id="uv-now" class="text-2xl font-semibold">–</p>
+          <p class="text-xs text-yellow-400 mt-1">letzter Messwert</p>
+        </div>
+
+        <!-- Temperatur -->
+        <div class="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 shadow-lg">
+          <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Temperatur</p>
+          <p id="temp-now" class="text-2xl font-semibold">– °C</p>
+          <p class="text-xs text-orange-400 mt-1">letzter Messwert</p>
+        </div>
+
+        <!-- Luftfeuchte -->
+        <div class="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 shadow-lg">
+          <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">rel. Luftfeuchte</p>
+          <p id="hum-now" class="text-2xl font-semibold">– %</p>
+          <p class="text-xs text-sky-300 mt-1">letzter Messwert</p>
+        </div>
+      </section>
+
+      <!-- Chart (Demo) -->
+      <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 shadow-lg">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-semibold">Hummelaktivität über den Tag</h2>
+            <p class="text-xs text-slate-400">Demo-Chart (Ein/Aus ist noch nicht in openSenseMap vorhanden).</p>
+          </div>
+          <span class="text-[10px] px-2 py-1 rounded-full bg-slate-800 text-slate-300">Demo</span>
+        </div>
+        <canvas id="activityChart" height="120"></canvas>
+      </section>
+    </section>
+
+    <!-- TAB: Standort -->
+    <section id="view-standort" class="hidden">
+      <div class="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 shadow-lg">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-semibold">Standort der senseBox</h2>
+            <p class="text-xs text-slate-400">Automatisch geladen aus openSenseMap (Refresh alle 60s).</p>
+          </div>
+          <span id="loc-status" class="text-[10px] px-2 py-1 rounded-full bg-slate-800 text-slate-300">–</span>
+        </div>
+
+        <div class="grid gap-6 md:grid-cols-3 mb-6">
+          <div class="rounded-2xl bg-slate-950/40 border border-slate-800 p-5">
+            <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Latitude</p>
+            <p id="lat" class="text-xl font-semibold">–</p>
+          </div>
+          <div class="rounded-2xl bg-slate-950/40 border border-slate-800 p-5">
+            <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Longitude</p>
+            <p id="lon" class="text-xl font-semibold">–</p>
+          </div>
+          <div class="rounded-2xl bg-slate-950/40 border border-slate-800 p-5">
+            <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Link</p>
+            <a id="mapsLink" target="_blank" class="underline text-sky-400 text-sm">Karte öffnen</a>
+          </div>
+        </div>
+
+        <div id="map" class="h-80 rounded-xl border border-slate-800"></div>
+      </div>
+    </section>
+
+    <!-- TAB: Recap -->
+    <section id="view-recap" class="hidden">
+      <div class="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 shadow-lg">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-semibold">Recap – letzte 7 Tage</h2>
+            <p class="text-xs text-slate-400">Durchschnittswerte (openSenseMap) + Wochenchart (Temp/UV/Humidity).</p>
+          </div>
+          <span id="recap-status" class="text-[10px] px-2 py-1 rounded-full bg-slate-800 text-slate-300">–</span>
+        </div>
+
+        <!-- Durchschnittswerte -->
+        <div class="grid gap-6 md:grid-cols-3 mb-6">
+          <div class="rounded-2xl bg-slate-950/40 border border-slate-800 p-5">
+            <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Ø Temperatur</p>
+            <p id="avg-temp" class="text-xl font-semibold">–</p>
+          </div>
+          <div class="rounded-2xl bg-slate-950/40 border border-slate-800 p-5">
+            <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Ø UV‑Intensität</p>
+            <p id="avg-uv" class="text-xl font-semibold">–</p>
+          </div>
+          <div class="rounded-2xl bg-slate-950/40 border border-slate-800 p-5">
+            <p class="text-xs uppercase tracking-wide text-slate-400 mb-1">Ø rel. Luftfeuchte</p>
+            <p id="avg-hum" class="text-xl font-semibold">–</p>
+          </div>
+        </div>
+
+        <!-- Wochenchart -->
+        <div class="rounded-2xl bg-slate-950/40 border border-slate-800 p-5">
+          <p class="text-xs uppercase tracking-wide text-slate-400 mb-3">Wochenübersicht (Ø pro Tag)</p>
+          <canvas id="weekChart" height="120"></canvas>
+          <p class="text-xs text-slate-400 mt-3">
+            Sensoren werden über deren <span class="text-slate-200">title</span> gefunden.
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    //  SETTINGS 
+    const BOX_ID = "697b3d91bd5b9f0007edb95b";
+    const BOX_URL = `https://api.opensensemap.org/boxes/${BOX_ID}`;
+
+    const SENSOR_TITLES = {
+      temp: "Temperatur",
+      hum: "rel. Luftfeuchte",
+      uv:  "UV-Intensität"
+    };
+
+    // TABS 
+    const tabDashboard = document.getElementById("tab-dashboard");
+    const tabStandort  = document.getElementById("tab-standort");
+    const tabRecap     = document.getElementById("tab-recap");
+
+    const viewDashboard = document.getElementById("view-dashboard");
+    const viewStandort  = document.getElementById("view-standort");
+    const viewRecap     = document.getElementById("view-recap");
+
+    function setActiveTab(which) {
+      const on  = "bg-slate-800 text-slate-100";
+      const off = "text-slate-300 hover:text-slate-100";
+
+      viewDashboard.classList.add("hidden");
+      viewStandort.classList.add("hidden");
+      viewRecap.classList.add("hidden");
+
+      tabDashboard.className = `px-4 py-2 text-sm rounded-lg ${off}`;
+      tabStandort.className  = `px-4 py-2 text-sm rounded-lg ${off}`;
+      tabRecap.className     = `px-4 py-2 text-sm rounded-lg ${off}`;
+
+      if (which === "dashboard") {
+        viewDashboard.classList.remove("hidden");
+        tabDashboard.className = `px-4 py-2 text-sm rounded-lg ${on}`;
+      } else if (which === "standort") {
+        viewStandort.classList.remove("hidden");
+        tabStandort.className = `px-4 py-2 text-sm rounded-lg ${on}`;
+      } else {
+        viewRecap.classList.remove("hidden");
+        tabRecap.className = `px-4 py-2 text-sm rounded-lg ${on}`;
+      }
+    }
+
+    tabDashboard.addEventListener("click", () => setActiveTab("dashboard"));
+    tabStandort.addEventListener("click", () => { setActiveTab("standort"); startLocationAutoRefresh(); });
+    tabRecap.addEventListener("click", () => { setActiveTab("recap"); loadRecapOnce(); });
+
+    //  DEMO-CHART (Ein/Aus)
+    const labels = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"];
+    const inData  = [5, 9, 15, 22, 30, 27, 24, 18, 10, 4];
+    const outData = [3, 7, 12, 19, 28, 25, 22, 16, 9, 3];
+
+    document.getElementById("activity-level").textContent = "–";
+
+    const ctx = document.getElementById("activityChart").getContext("2d");
+    const activityChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          { label: "Einflüge (Demo)", data: inData, borderWidth: 2, tension: 0.35 },
+          { label: "Ausflüge (Demo)", data: outData, borderWidth: 2, tension: 0.35 }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: "#cbd5f5", font: { size: 11 } } } },
+        scales: {
+          x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(148,163,184,0.15)" } },
+          y: { beginAtZero: true, ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(148,163,184,0.15)" } }
+        }
+      }
+    });
+
+    // LIVE: TEMP + HUM + UV 
+    function formatNumber(v, digits = 1) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n.toFixed(digits) : null;
+    }
+
+    async function loadLatestSensors() {
+      try {
+        const res = await fetch(BOX_URL);
+        const box = await res.json();
+        const sensors = box?.sensors || [];
+
+        const tempSensor = sensors.find(s => s.title === SENSOR_TITLES.temp);
+        const humSensor  = sensors.find(s => s.title === SENSOR_TITLES.hum);
+        const uvSensor   = sensors.find(s => s.title === SENSOR_TITLES.uv);
+
+        const tempValue = tempSensor?.lastMeasurement?.value;
+        const humValue  = humSensor?.lastMeasurement?.value;
+        const uvValue   = uvSensor?.lastMeasurement?.value;
+
+        const t = formatNumber(tempValue, 1);
+        const h = formatNumber(humValue, 1);
+        const u = formatNumber(uvValue, 2);
+
+        if (t != null) document.getElementById("temp-now").textContent = `${t} °C`;
+        if (h != null) document.getElementById("hum-now").textContent  = `${h} %`;
+        if (u != null) document.getElementById("uv-now").textContent   = `${u}`;
+
+      } catch (e) {
+        console.error("Live-Sensorwerte laden fehlgeschlagen:", e);
+      }
+    }
+
+    loadLatestSensors();
+    setInterval(loadLatestSensors, 10000); // alle 10s
+
+    // STANDORT (openSenseMap) 
+    let map, marker;
+    let locationStarted = false;
+
+    async function loadLocationUpdate() {
+      const statusEl = document.getElementById("loc-status");
+      statusEl.textContent = "lädt…";
+
+      try {
+        const res = await fetch(BOX_URL);
+        const box = await res.json();
+
+        const coords = box?.currentLocation?.coordinates;
+        if (!coords || coords.length < 2) throw new Error("Keine Koordinaten gefunden.");
+
+        const lon = Number(coords[0]);
+        const lat = Number(coords[1]);
+
+        document.getElementById("lat").textContent = lat.toFixed(6);
+        document.getElementById("lon").textContent = lon.toFixed(6);
+        document.getElementById("mapsLink").href = `https://www.google.com/maps?q=${lat},${lon}`;
+
+        if (!map) {
+          map = L.map("map").setView([lat, lon], 15);
+          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "© OpenStreetMap"
+          }).addTo(map);
+          marker = L.marker([lat, lon]).addTo(map).bindPopup("senseBox Standort").openPopup();
+        } else {
+          marker.setLatLng([lat, lon]);
+          map.setView([lat, lon], map.getZoom());
+        }
+
+        statusEl.textContent = "OK";
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Fehler";
+      }
+    }
+
+    function startLocationAutoRefresh() {
+      if (locationStarted) return;
+      locationStarted = true;
+      loadLocationUpdate();
+      setInterval(loadLocationUpdate, 60000); // 60s
+    }
+
+    //  RECAP (letzte 7 Tage) 
+    let recapLoaded = false;
+    let weekChart;
+
+    function isoDate(d) { return d.toISOString().slice(0, 10); }
+    function mean(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null; }
+
+    async function loadRecapOnce() {
+      if (recapLoaded) return;
+      recapLoaded = true;
+      await loadRecap();
+    }
+
+    async function loadRecap() {
+      const statusEl = document.getElementById("recap-status");
+      statusEl.textContent = "lädt…";
+
+      try {
+        const boxRes = await fetch(BOX_URL);
+        const box = await boxRes.json();
+
+        const sensors = box?.sensors || [];
+        const findId = (title) => sensors.find(s => s.title === title)?._id;
+
+        const ids = {
+          temp: findId(SENSOR_TITLES.temp),
+          hum:  findId(SENSOR_TITLES.hum),
+          uv:   findId(SENSOR_TITLES.uv),
+        };
+
+        const to = new Date();
+        const from = new Date();
+        from.setDate(to.getDate() - 6);
+
+        const fromStr = isoDate(from);
+        const toStr = isoDate(to);
+
+        async function fetchSeries(sensorId) {
+          if (!sensorId) return [];
+          const url = `https://api.opensensemap.org/boxes/${BOX_ID}/data/${sensorId}?from-date=${fromStr}&to-date=${toStr}`;
+          const r = await fetch(url);
+          const data = await r.json();
+          return Array.isArray(data) ? data : [];
+        }
+
+        const [tempSeries, humSeries, uvSeries] = await Promise.all([
+          fetchSeries(ids.temp),
+          fetchSeries(ids.hum),
+          fetchSeries(ids.uv),
+        ]);
+
+        // Tage-Liste
+        const days = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(from);
+          d.setDate(from.getDate() + i);
+          days.push(isoDate(d));
+        }
+
+        // Durchschnitt pro Tag (nicht Summe)
+        const avgByDay = (series) => {
+          const buckets = Object.fromEntries(days.map(d => [d, []]));
+          for (const m of series) {
+            const day = (m.createdAt || "").slice(0,10);
+            const v = Number(m.value);
+            if (!Number.isFinite(v)) continue;
+            if (buckets[day]) buckets[day].push(v);
+          }
+          return days.map(d => {
+            const arr = buckets[d] || [];
+            return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+          });
+        };
+
+        const tempByDay = avgByDay(tempSeries);
+        const humByDay  = avgByDay(humSeries);
+        const uvByDay   = avgByDay(uvSeries);
+
+        const avgTemp = mean(tempSeries.map(m => Number(m.value)).filter(Number.isFinite));
+        const avgHum  = mean(humSeries.map(m => Number(m.value)).filter(Number.isFinite));
+        const avgUv   = mean(uvSeries.map(m => Number(m.value)).filter(Number.isFinite));
+
+        document.getElementById("avg-temp").textContent = avgTemp == null ? "–" : `${avgTemp.toFixed(1)} °C`;
+        document.getElementById("avg-hum").textContent  = avgHum  == null ? "–" : `${avgHum.toFixed(1)} %`;
+        document.getElementById("avg-uv").textContent   = avgUv   == null ? "–" : `${avgUv.toFixed(2)} μW/cm²`;
+
+        const ctxW = document.getElementById("weekChart").getContext("2d");
+        if (weekChart) weekChart.destroy();
+
+        weekChart = new Chart(ctxW, {
+          type: "line",
+          data: {
+            labels: days.map(d => d.slice(5)), // MM-DD
+            datasets: [
+              {
+                label: "Ø Temperatur (°C)",
+                data: tempByDay,
+                borderWidth: 2,
+                tension: 0.35
+              },
+              {
+                label: "Ø Luftfeuchte (%)",
+                data: humByDay,
+                borderWidth: 2,
+                tension: 0.35
+              },
+              {
+                label: "Ø UV (μW/cm²)",
+                data: uvByDay,
+                borderWidth: 2,
+                tension: 0.35
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: "#cbd5f5", font: { size: 11 } } } },
+            scales: {
+              x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(148,163,184,0.15)" } },
+              y: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(148,163,184,0.15)" } }
+            }
+          }
+        });
+
+        statusEl.textContent = "OK";
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Fehler";
+      }
+    }
+  </script>
+</body>
+</html>
