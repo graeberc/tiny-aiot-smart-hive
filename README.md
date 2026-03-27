@@ -17,22 +17,22 @@ BEEhavior erkennt und zählt Hummeln am Stockeingang in Echtzeit mithilfe eines 
 ## Repository-Struktur
 
 ```
-├── Sketches/
-│   ├── FinalSketch.ino                ← Hauptsketch (Inferenz, Stream, Zählung, Upload etc.)
-│   └── BilderAufnehmenESP.ino         ← Hilfssketch: Trainingsbilder auf SD-Karte aufnehmen
-├── Modell/
-│   └── HummelEdgeImpulse_inferencing.zip  ← Edge Impulse Modell (Arduino Library)
+├── Dashboard/
+│   └── Dashboard.html                 ← Web-Dashboard (openSenseMap Live-Daten)
 ├── Datensätze/
 │   ├── EdgeImpulse_Trainingsdaten.zip ← Gelabelte Edge Impulse Trainingsdaten
 │   ├── HummelBilder.zip               ← Rohbilder 
 │   └── HummelBilder_2.zip             ← Rohbilder 
-├── Dashboard/
-│   └── Dashboard.html                 ← Web-Dashboard (openSenseMap Live-Daten)
 ├── Halterung/                         ← 3D-Druck-Datei für die Kamerahalterung
+├── Modell/
+│   └── HummelEdgeImpulse_inferencing.zip  ← Edge Impulse Modell (Arduino Library)
+├── Sketches/
+│   ├── FinalSketch.ino                ← Hauptsketch (Inferenz, Stream, Zählung, Upload etc.)
+│   └── BilderAufnehmenESP.ino         ← Hilfssketch: Trainingsbilder auf SD-Karte aufnehmen
 ├── docs/
 │   └── arduino_board_settings.png     ← Screenshot der Arduino Board-Einstellungen
-└── LICENSE                            ← MIT Lizenz
-
+├── LICENSE                            ← MIT Lizenz
+└── README.md                          
 ```
 
 ---
