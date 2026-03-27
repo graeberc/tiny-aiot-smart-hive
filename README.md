@@ -1,60 +1,100 @@
-# tiny-aiot-smart-hive
-
-# Hummel Edge Impulse Projekt
+# BEEhavior – TinyAIoT Smart Hive 
 
 ## Projektübersicht
-Dieses Projekt dient zur Erkennung und Zählung von Hummeln mithilfe eines Edge-Impulse-Modells auf einem ESP32-Kameramodul.  
-Das Modell basiert auf **FOMO (Object Detection)** und wird direkt auf dem Gerät ausgeführt. Die Kamera liefert ein Livebild, das über einen integrierten Webserver angezeigt wird. Erkannte Hummeln werden als Bounding Boxen visualisiert und gezählt.
+
+BEEhavior erkennt und zählt Hummeln am Stockeingang in Echtzeit mithilfe eines YOLO-Modells (Edge Impulse), das direkt auf einem ESP32-S3 läuft. Ein Tracking-Algorithmus verfolgt die Hummeln über Frames hinweg und zählt Ein-/Ausflüge über zwei virtuelle Zähllinien. Die Zählerstände werden automatisch an [openSenseMap](https://opensensemap.org) übertragen und zusammen mit Umweltdaten (Temperatur, UV, Luftfeuchte) in einem Web-Dashboard visualisiert.
+
+
+**Kernfunktionen:**
+- **On-Device Inferenz** – YOLO Object Detection direkt auf dem ESP32-S3
+- **Hummelzählung** – Tracking + Zähler-Logik
+- **Umweltsensoren** – Temperatur, Luftfeuchte und UV-Intensität über senseBox
+- **openSenseMap-Upload** – Automatische Synchronisierung der Zähler und Sensoren per HTTPS
+- **Web-Dashboard** – Live-Visualisierung aller Daten
 
 ---
 
-## Aktueller Stand
-- **Aktuelle Modellversion:** `HummelModell_inferencing`
-- **Aktueller Sketch:** `FinalSketch`
-- **Edge-Impulse-Anpassung:**  
-  Die Datei `ei_classifier_porting.cpp` im Modellordner wurde durch eine angepasste Version ersetzt, um die Inferenz korrekt auf dem ESP32 auszuführen.
+## Repository-Struktur
+
+```
+├── Dashboard/
+│   └── Dashboard.html                 ← Web-Dashboard (openSenseMap Live-Daten)
+├── Datensätze/
+│   ├── EdgeImpulse_Trainingsdaten.zip ← Gelabelte Edge Impulse Trainingsdaten
+│   ├── HummelBilder.zip               ← Rohbilder 
+│   └── HummelBilder_2.zip             ← Rohbilder 
+├── Halterung/                         ← 3D-Druck-Datei für die Kamerahalterung
+├── Modell/
+│   └── HummelEdgeImpulse_inferencing.zip  ← Edge Impulse Modell (Arduino Library)
+├── Sketches/
+│   ├── FinalSketch.ino                ← Hauptsketch (Inferenz, Stream, Zählung, Upload etc.)
+│   └── BilderAufnehmenESP.ino         ← Hilfssketch: Trainingsbilder auf SD-Karte aufnehmen
+├── docs/
+│   └── arduino_board_settings.png     ← Screenshot der Arduino Board-Einstellungen
+├── LICENSE                            ← MIT Lizenz
+└── README.md                          
+```
 
 ---
 
-## Funktionsweise (vereinfacht)
-1. Die Kamera nimmt kontinuierlich Bilder auf.
-2. Die Bilder werden auf die vom Modell erwartete Größe skaliert.
-3. Das Edge-Impulse-Modell analysiert jedes Bild auf Hummeln.
-4. Erkannte Hummeln werden:
-   - im Livebild als Bounding Box dargestellt
-   - intern getrackt
-   - beim Durchqueren definierter Linien gezählt (rein / raus)
-5. Das Livebild wird über einen Webserver im Browser angezeigt.
+## Deployment Guide
+
+### Hardware
+
+- **ESP32-S3 senseBox Eye** mit RGB-Kamera und WiFi-Antenne
+- **Temperatur, Luftfeuchtesensor, UV-Sensor** (senseBox)
+- **3D-gedruckte Halterung** für stabile Zählung am Stockeingang
+- **Powerbank** ggf. zur Stromversorgung
+
+### Software
+
+Voraussetzungen:
+
+- Arduino IDE installieren
+- Board-Paket **esp32 by Espressif Systems** in Arduino IDE installieren
+
+### Schritt 1 – Modell importieren
+
+`Modell/HummelEdgeImpulse_inferencing.zip` in Arduino IDE importieren:  
+*Sketch → Bibliothek einbinden → .ZIP-Bibliothek hinzufügen…*
+
+### Schritt 2 – Sketch anpassen
+
+Im `FinalSketch.ino` müssen die **WLAN-Zugangsdaten** angepasst werden. 
+Optional können der **Startbestand** an Hummeln im Stock und ggf. Parameter wie der **Confidence-Threshold** etc. angepasst werden.
+
+### Schritt 3 – Board-Einstellungen
+
+Mit diesen Tool-Einstellungen lief der Sketch bei uns auf dem ESP32-S3, können aber ggf. auch angepasst werden.
+
+<img src="docs/arduino_board_settings.png" alt="Arduino IDE Board-Einstellungen" width="400">
+
+### Schritt 4 – Upload & Start
+
+1. ESP32-S3 per USB verbinden
+2. Während man den Boot-Knopf hält, den einmal Reset-Knopf drücken
+3. Upload klicken
+4. Seriellen Monitor öffnen
+5. Reset-Knopf erneut drücken
+6. IP im Browser öffnen → Livebild mit Zählern
+
+---
+### Hinweis
+
+Das Livebild dient hauptsächlich Überprüfungs- und Debugzwecken. Für den eigentlichen Betrieb empfehlen wir es zu deaktivieren, da es zu Leistungseinbußen auf dem ESP führt und die Frame-Rate der Erkennung reduziert.
+In unserem Projekt haben wir mit Hummeln gearbeitet. Das Ganze kann aber auch auf z.B. Bienen übertragen werden - dementsprechend sollte dann ein neues Modell trainiert werden.
+
+## Dashboard
+
+`Dashboard/Dashboard.html` einfach im Browser öffnen, zeigt Live-Daten aus openSenseMap:
+
+- **Dashboard-Tab:** Ein-/Ausflüge, Bestand, UV, Temperatur, Luftfeuchte + stündliches Aktivitätschart
+- **Standort-Tab:** Leaflet-Karte mit GPS-Position der senseBox
+- **Recap-Tab:** 7-Tage-Durchschnittswerte + Wochenchart
 
 ---
 
-## Modell
-- Typ: **Object Detection (FOMO)**
-- Eingabegröße: **160 × 160 Pixel**
-- Klassen: **Hummel**
-- Training:  
-  Basierend auf selbst aufgenommenen Bildern mit realem Hintergrund aus der späteren Einsatzumgebung.
+## Lizenz
 
----
+Dieses Projekt ist im Rahmen eines TinyAIoT-Studienprojekts entstanden und steht unter der [MIT License](LICENSE).
 
-## Wichtige Dateien
-- `FinalSketch.ino`  
-  Hauptsketch für Kamera, WLAN, Webserver, Inferenz und Zählung
-- `HummelModell_inferencing/`  
-  Edge-Impulse-Modellordner
-- `ei_classifier_porting.cpp`  
-  Angepasste Portierung für den ESP32 (ersetzt die Originaldatei aus dem Download)
-
----
-
-## Aktuelle Probleme
-- Hummeln werden im Livebild aktuell **nicht zuverlässig erkannt**
-- Teilweise erscheinen Bounding Boxen auf zufälligen Bildbereichen
-- Die genaue Ursache (Modell vs. Bildvorverarbeitung) ist noch in Analyse
-- Ein stabiler Fix wurde bisher nicht gefunden
-
----
-
-
-## Ziel
-Zuverlässige Erkennung und Zählung von Hummeln am Nesteingang.
